@@ -1,103 +1,162 @@
-import Image from "next/image";
+"use client";
+import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [faceLandmarker, setFaceLandmarker] = useState(null);
+  const [mode, setMode] = useState("landmark");
+  const [isMirrored, setIsMirrored] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  useEffect(() => {
+    const initCamera = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    };
+    initCamera();
+  }, []);
+
+  useEffect(() => {
+    const loadModel = async () => {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+      );
+
+      const landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        },
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: false,
+        runningMode: "VIDEO",
+        numFaces: 1,
+      });
+
+      setFaceLandmarker(landmarker);
+    };
+
+    loadModel();
+  }, []);
+
+  const renderLoop = async () => {
+    if (faceLandmarker && videoRef.current?.readyState === 4) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const now = performance.now();
+      const results = await faceLandmarker.detectForVideo(video, now);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (results && results.faceLandmarks.length > 0) {
+        const points = results.faceLandmarks[0];
+
+        ctx.save();
+        if (isMirrored) {
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+        }
+
+        ctx.fillStyle = "#00FF00";
+        ctx.lineWidth = 1;
+
+        points.forEach((pt, i) => {
+          if (
+            (mode === "landmark" && i % 5 === 0) ||
+            (mode === "contour" && [10, 234, 454, 152, 67, 297].includes(i)) ||
+            mode === "mesh"
+          ) {
+            ctx.beginPath();
+            ctx.arc(
+              pt.x * canvas.width,
+              pt.y * canvas.height,
+              2,
+              0,
+              2 * Math.PI
+            );
+            ctx.fill();
+          }
+        });
+
+        ctx.restore();
+      }
+    }
+
+    requestAnimationFrame(renderLoop);
+  };
+
+  useEffect(() => {
+    renderLoop();
+  }, [faceLandmarker, mode, isMirrored]);
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const modes = ["landmark", "contour", "mesh"];
+
+  return (
+    <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center py-10 px-4">
+      <h1 className="text-2xl font-medium mb-6">
+        🧑‍💻 Face Landmark Detection
+      </h1>
+
+      <div className="relative w-max-[640px] h-max-[480px] rounded overflow-hidden shadow-lg">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="w-full h-full object-cover rounded"
+          style={{ transform: isMirrored ? "scaleX(-1)" : "scaleX(1)" }}
+        />
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0 w-full h-full"
+        />
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-4 justify-center items-center">
+        <div className="relative">
+          <button
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            className="bg-gray-800 text-white px-10 py-2 rounded-md border border-gray-600 hover:bg-gray-700 focus:outline-none"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            {mode.charAt(0).toUpperCase() + mode.slice(1)} <i class="ri-arrow-up-s-line"></i>
+          </button>
+
+          {dropdownOpen && (
+            <div className="absolute z-10 bottom-full mb-2 w-40 bg-gray-900 border border-gray-600 rounded-md shadow-lg">
+              {modes.map((m) => (
+                <div
+                  key={m}
+                  onClick={() => {
+                    setMode(m);
+                    setDropdownOpen(false);
+                  }}
+                  className={`px-4 py-2 cursor-pointer hover:bg-gray-700 ${
+                    mode === m ? "bg-green-600 text-black font-semibold" : ""
+                  }`}
+                >
+                  {m.charAt(0).toUpperCase() + m.slice(1)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+
+        {/* Mirror toggle */}
+        <button
+          onClick={() => setIsMirrored(!isMirrored)}
+          className="px-4 py-2 rounded-md border bg-blue-500 text-black font-semibold hover:bg-blue-600"
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          {isMirrored ? "Unmirror" : "Mirror"} Camera
+        </button>
+      </div>
+    </main>
   );
 }
